@@ -58,7 +58,7 @@ func setLog(logFile *string) {
 }
 
 func startWebserver() {
-	log.Println("starting webserver")
+	log.Printf("Starting gohub on 0.0.0.0:%s", *port)
 	http.ListenAndServe(":"+*port, nil)
 }
 
