@@ -75,7 +75,7 @@ func addHandler(repo, branch string, hook Hook) {
 		}
 		if data.Repository.Name == repo && strings.HasPrefix(data.Ref, "refs/tags/") {
 			executeShell(hook.Shell, repo, uri, "tag", data.Ref[10:])
-		} else if data.Repository.Name == repo && strings.HasPrefix(data.Ref, "refs/heads/") {
+		} else if data.Repository.Name == repo && data.Ref == branch {
 			executeShell(hook.Shell, repo, uri, "push", data.After)
 		} else {
 			executeShell(hook.Shell)
