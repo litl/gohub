@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 type Repository struct {
@@ -17,6 +18,7 @@ type Repository struct {
 type GithubJson struct {
 	Repository Repository
 	Ref        string
+	After      string
 }
 
 type Config struct {
@@ -40,7 +42,7 @@ func loadConfig(configFile *string) {
 		log.Fatal(err)
 	}
 	for i := 0; i < len(config.Hooks); i++ {
-		addHandler(config.Hooks[i].Repo, config.Hooks[i].Branch, config.Hooks[i].Shell)
+		addHandler(config.Hooks[i].Repo, config.Hooks[i].Branch, config.Hooks[i])
 	}
 }
 
@@ -58,7 +60,7 @@ func startWebserver() {
 	http.ListenAndServe(":"+*port, nil)
 }
 
-func addHandler(repo, branch, shell string) {
+func addHandler(repo, branch string, hook Hook) {
 	uri := branch
 	branch = "refs/heads/" + branch
 	http.HandleFunc("/"+repo+"_"+uri, func(w http.ResponseWriter, r *http.Request) {
@@ -69,14 +71,19 @@ func addHandler(repo, branch, shell string) {
 		if err != nil {
 			log.Println(err)
 		}
-		if data.Repository.Name == repo && data.Ref == branch {
-			executeShell(shell)
+		if data.Repository.Name == repo && strings.HasPrefix(data.Ref, "refs/tags/") {
+			executeShell(hook.Shell, repo, uri, "tag", data.Ref[10:])
+		} else if data.Repository.Name == repo && strings.HasPrefix(data.Ref, "refs/heads/") {
+			executeShell(hook.Shell, repo, uri, "push", data.After)
+		} else {
+			executeShell(hook.Shell)
 		}
+
 	})
 }
 
-func executeShell(shell string) {
-	out, err := exec.Command(shell).Output()
+func executeShell(shell string, args ...string) {
+	out, err := exec.Command(shell, args...).Output()
 	if err != nil {
 		log.Fatal(err)
 	}
