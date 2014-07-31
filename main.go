@@ -19,6 +19,7 @@ type GithubJson struct {
 	Repository Repository
 	Ref        string
 	After      string
+	Deleted    bool
 }
 
 type Config struct {
@@ -73,9 +74,9 @@ func addHandler(repo, branch string, hook Hook) {
 		if err != nil {
 			log.Println(err)
 		}
-		if data.Repository.Name == repo && strings.HasPrefix(data.Ref, "refs/tags/") {
+		if data.Repository.Name == repo && strings.HasPrefix(data.Ref, "refs/tags/") && !data.Deleted {
 			executeShell(hook.Shell, repo, uri, "tag", data.Ref[10:])
-		} else if data.Repository.Name == repo && data.Ref == branch {
+		} else if data.Repository.Name == repo && data.Ref == branch && !data.Deleted {
 			executeShell(hook.Shell, repo, uri, "push", data.After)
 		} else {
 			executeShell(hook.Shell)
