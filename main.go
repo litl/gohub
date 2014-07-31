@@ -47,11 +47,13 @@ func loadConfig(configFile *string) {
 }
 
 func setLog(logFile *string) {
-	log_handler, err := os.OpenFile(*logFile, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0777)
-	if err != nil {
-		panic("cannot write log")
+	if *logFile != "" {
+		log_handler, err := os.OpenFile(*logFile, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0777)
+		if err != nil {
+			panic("cannot write log")
+		}
+		log.SetOutput(log_handler)
 	}
-	log.SetOutput(log_handler)
 	log.SetFlags(5)
 }
 
@@ -93,7 +95,7 @@ func executeShell(shell string, args ...string) {
 var (
 	port       = flag.String("port", "7654", "port to listen on")
 	configFile = flag.String("config", "./config.json", "config")
-	logFile    = flag.String("log", "./log", "log file")
+	logFile    = flag.String("log", "", "log file")
 )
 
 func init() {
