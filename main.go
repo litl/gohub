@@ -111,7 +111,9 @@ func addHandler() {
 func executeShell(shell string, args ...string) {
 	out, err := exec.Command(shell, args...).Output()
 	if err != nil {
+		log.Println(string(out))
 		log.Fatal(err)
+
 	}
 	log.Printf("Shell output was: %s\n", out)
 }
