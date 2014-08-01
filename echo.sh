@@ -1,6 +1,7 @@
 #!/bin/bash
 
 echo "repo is $1"
-echo "branch is $2"
-echo "type is $3"
-echo "ref is $4"
+echo "project is $2"
+echo "branch is $3"
+echo "type is $4"
+echo "ref is $5"
