@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"io/ioutil"
@@ -67,19 +68,27 @@ func addHandler(repo, branch string, hook Hook) {
 	uri := branch
 	branch = "refs/heads/" + branch
 	http.HandleFunc("/"+repo+"_"+uri, func(w http.ResponseWriter, r *http.Request) {
-		decoder := json.NewDecoder(r.Body)
+		body, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		defer r.Body.Close()
+
+		decoder := json.NewDecoder(bytes.NewBuffer(body))
 		var data GithubJson
-		err := decoder.Decode(&data)
+		err = decoder.Decode(&data)
 
 		if err != nil {
 			log.Println(err)
+			return
 		}
 		if data.Repository.Name == repo && strings.HasPrefix(data.Ref, "refs/tags/") && !data.Deleted {
 			executeShell(hook.Shell, repo, uri, "tag", data.Ref[10:])
 		} else if data.Repository.Name == repo && data.Ref == branch && !data.Deleted {
 			executeShell(hook.Shell, repo, uri, "push", data.After)
 		} else {
-			executeShell(hook.Shell)
+			log.Printf("Unhandled webhook for %s branch %s.  Got:\n%s", repo, branch, string(body))
 		}
 
 	})
