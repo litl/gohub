@@ -13,7 +13,8 @@ import (
 )
 
 type Repository struct {
-	Name string
+	Name     string
+	FullName string `json:"full_name"`
 }
 
 type GithubJson struct {
@@ -33,8 +34,9 @@ type Hook struct {
 	Shell  string
 }
 
+var config Config
+
 func loadConfig(configFile *string) {
-	var config Config
 	configData, err := ioutil.ReadFile(*configFile)
 	if err != nil {
 		log.Fatal(err)
@@ -43,9 +45,8 @@ func loadConfig(configFile *string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	for i := 0; i < len(config.Hooks); i++ {
-		addHandler(config.Hooks[i].Repo, config.Hooks[i].Branch, config.Hooks[i])
-	}
+
+	addHandler()
 }
 
 func setLog(logFile *string) {
@@ -64,17 +65,14 @@ func startWebserver() {
 	http.ListenAndServe(":"+*port, nil)
 }
 
-func addHandler(repo, branch string, hook Hook) {
-	uri := branch
-	branch = "refs/heads/" + branch
-	http.HandleFunc("/"+repo+"_"+uri, func(w http.ResponseWriter, r *http.Request) {
+func addHandler() {
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			log.Println(err)
 			return
 		}
 		defer r.Body.Close()
-
 		decoder := json.NewDecoder(bytes.NewBuffer(body))
 		var data GithubJson
 		err = decoder.Decode(&data)
@@ -83,14 +81,29 @@ func addHandler(repo, branch string, hook Hook) {
 			log.Println(err)
 			return
 		}
-		if data.Repository.Name == repo && strings.HasPrefix(data.Ref, "refs/tags/") && !data.Deleted {
-			executeShell(hook.Shell, repo, uri, "tag", data.Ref[10:])
-		} else if data.Repository.Name == repo && data.Ref == branch && !data.Deleted {
-			executeShell(hook.Shell, repo, uri, "push", data.After)
-		} else {
-			log.Printf("Unhandled webhook for %s branch %s.  Got:\n%s", repo, branch, string(body))
+
+		var hook Hook
+		for _, cfgHook := range config.Hooks {
+			if cfgHook.Repo == data.Repository.FullName {
+				hook = cfgHook
+				break
+			}
 		}
 
+		if hook.Shell == "" {
+			log.Printf("Unhandled webhook for %s branch %s.  Got:\n%s", data.Repository.FullName,
+				data.Ref, string(body))
+			return
+		}
+
+		if strings.HasPrefix(data.Ref, "refs/tags/") && !data.Deleted {
+			executeShell(hook.Shell, data.Repository.FullName, hook.Branch, "tag", data.Ref[10:])
+		} else if data.Ref == "refs/heads/"+hook.Branch && !data.Deleted {
+			executeShell(hook.Shell, data.Repository.FullName, hook.Branch, "push", data.After)
+		} else {
+			log.Printf("Unhandled webhook for %s branch %s.  Got:\n%s", data.Repository.FullName,
+				hook.Branch, string(body))
+		}
 	})
 }
 
