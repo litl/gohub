@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 )
 
 type Repository struct {
@@ -109,13 +111,36 @@ func addHandler() {
 }
 
 func executeShell(shell string, args ...string) {
-	out, err := exec.Command(shell, args...).Output()
+	fmt.Printf("Running %s %s\n", shell, strings.Join(args, " "))
+	cmd := exec.Command(shell, args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	var b []byte
+	buf := bytes.NewBuffer(b)
+	cmd.Stderr = buf
+	err := cmd.Start()
 	if err != nil {
-		log.Println(string(out))
-		log.Fatal(err)
-
+		log.Println(err)
 	}
-	log.Printf("Shell output was: %s\n", out)
+
+	if err := cmd.Wait(); err != nil {
+		log.Println(buf.String())
+		if exiterr, ok := err.(*exec.ExitError); ok {
+			// The program has exited with an exit code != 0
+
+			// This works on both Unix and Windows. Although package
+			// syscall is generally platform dependent, WaitStatus is
+			// defined for both Unix and Windows and in both cases has
+			// an ExitStatus() method with the same signature.
+			if _, ok := exiterr.Sys().(syscall.WaitStatus); ok {
+				log.Printf("Command finished with error: %v\n", err)
+				return
+			}
+		} else {
+			log.Printf("Command finished with error: %v\n", err)
+			return
+		}
+	}
 }
 
 var (
