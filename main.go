@@ -98,9 +98,9 @@ func addHandler() {
 
 		project := hook.Repo[strings.LastIndex(hook.Repo, "/")+1:]
 		if strings.HasPrefix(data.Ref, "refs/tags/") && !data.Deleted {
-			executeShell(hook.Shell, data.Repository.FullName, project, hook.Branch, "tag", data.Ref[10:])
+			go executeShell(hook.Shell, data.Repository.FullName, project, hook.Branch, "tag", data.Ref[10:])
 		} else if data.Ref == "refs/heads/"+hook.Branch && !data.Deleted {
-			executeShell(hook.Shell, data.Repository.FullName, project, hook.Branch, "push", data.After)
+			go executeShell(hook.Shell, data.Repository.FullName, project, hook.Branch, "push", data.After)
 		} else {
 			log.Printf("Unhandled webhook for %s branch %s.  Got:\n%s", data.Repository.FullName,
 				hook.Branch, string(body))
