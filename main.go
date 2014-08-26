@@ -7,11 +7,14 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"syscall"
+	"time"
 )
 
 type Repository struct {
@@ -111,20 +114,31 @@ func addHandler() {
 }
 
 func executeShell(shell string, args ...string) {
-	fmt.Printf("Running %s %s\n", shell, strings.Join(args, " "))
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	jobId := r.Uint32()
+
+	prefix := fmt.Sprintf("repo=%s jobId=%s ", args[0], strconv.FormatInt(int64(jobId), 10))
+
+	logger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
+
+	logStreamerOut := NewLogstreamer(logger, prefix, false)
+
+	logStreamerOut.Write([]byte(fmt.Sprintf("Running %s %s\n", shell, strings.Join(args, " "))))
 	cmd := exec.Command(shell, args...)
+
 	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	var b []byte
-	buf := bytes.NewBuffer(b)
-	cmd.Stderr = buf
-	err := cmd.Start()
+	cmd.Stdout = logStreamerOut
+	cmd.Stderr = logStreamerOut
+	/*	var b []byte
+		buf := bytes.NewBuffer(b)
+		cmd.Stderr = buf
+	*/err := cmd.Start()
 	if err != nil {
-		log.Println(err)
+		logger.Println(err)
 	}
 
 	if err := cmd.Wait(); err != nil {
-		log.Println(buf.String())
+
 		if exiterr, ok := err.(*exec.ExitError); ok {
 			// The program has exited with an exit code != 0
 
@@ -133,11 +147,11 @@ func executeShell(shell string, args ...string) {
 			// defined for both Unix and Windows and in both cases has
 			// an ExitStatus() method with the same signature.
 			if _, ok := exiterr.Sys().(syscall.WaitStatus); ok {
-				log.Printf("Command finished with error: %v\n", err)
+				logStreamerOut.Write([]byte(fmt.Sprintf("Command finished with error: %v\n", err)))
 				return
 			}
 		} else {
-			log.Printf("Command finished with error: %v\n", err)
+			logStreamerOut.Write([]byte(fmt.Sprintf("Command finished with error: %v\n", err)))
 			return
 		}
 	}
