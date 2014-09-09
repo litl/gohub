@@ -117,7 +117,13 @@ func executeShell(shell string, args ...string) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	jobId := r.Uint32()
 
-	prefix := fmt.Sprintf("repo=%s jobId=%s ", args[0], strconv.FormatInt(int64(jobId), 10))
+	commit := args[4]
+	if args[3] == "push" {
+		commit = commit[:6]
+	}
+
+	prefix := fmt.Sprintf("repo=%s jobId=%s ref=%s ", args[0],
+		strconv.FormatInt(int64(jobId), 10), commit)
 
 	stdOutLogger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
 	stdErrLogger := log.New(os.Stderr, "", log.Ldate|log.Ltime)
