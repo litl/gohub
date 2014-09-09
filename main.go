@@ -119,22 +119,22 @@ func executeShell(shell string, args ...string) {
 
 	prefix := fmt.Sprintf("repo=%s jobId=%s ", args[0], strconv.FormatInt(int64(jobId), 10))
 
-	logger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
+	stdOutLogger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
+	stdErrLogger := log.New(os.Stderr, "", log.Ldate|log.Ltime)
 
-	logStreamerOut := NewLogstreamer(logger, prefix, false)
+	logStreamerOut := NewLogstreamer(stdOutLogger, prefix, false)
+	logStreameErr := NewLogstreamer(stdErrLogger, prefix, false)
 
 	logStreamerOut.Write([]byte(fmt.Sprintf("Running %s %s\n", shell, strings.Join(args, " "))))
 	cmd := exec.Command(shell, args...)
 
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = logStreamerOut
-	cmd.Stderr = logStreamerOut
-	/*	var b []byte
-		buf := bytes.NewBuffer(b)
-		cmd.Stderr = buf
-	*/err := cmd.Start()
+	cmd.Stderr = logStreameErr
+
+	err := cmd.Start()
 	if err != nil {
-		logger.Println(err)
+		stdErrLogger.Println(err)
 	}
 
 	if err := cmd.Wait(); err != nil {
