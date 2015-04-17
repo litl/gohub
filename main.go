@@ -131,9 +131,12 @@ func executeShell(shell string, args ...string) {
 	logStreamerOut := NewLogstreamer(stdOutLogger, prefix, false)
 	logStreameErr := NewLogstreamer(stdErrLogger, prefix, false)
 
+	env := append(os.Environ(), fmt.Sprintf("GOHUB_JOB_ID=%d", jobId))
+
 	logStreamerOut.Write([]byte(fmt.Sprintf("Running %s %s\n", shell, strings.Join(args, " "))))
 	cmd := exec.Command(shell, args...)
 
+	cmd.Env = env
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = logStreamerOut
 	cmd.Stderr = logStreameErr
