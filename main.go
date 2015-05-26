@@ -11,8 +11,8 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -37,6 +37,18 @@ type Hook struct {
 	Repo   string
 	Branch string
 	Shell  string
+}
+
+type runningJob struct {
+	jobID  uint32
+	doneCh chan struct{}
+}
+
+var runningJobMap = struct {
+	m  map[string]*runningJob
+	mu sync.Mutex
+}{
+	m: make(map[string]*runningJob),
 }
 
 var config Config
@@ -117,19 +129,43 @@ func executeShell(shell string, args ...string) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	jobId := r.Uint32()
 
+	repo := args[0]
 	commit := args[4]
 	if args[3] == "push" {
 		commit = commit[:6]
 	}
 
-	prefix := fmt.Sprintf("repo=%s jobId=%s ref=%s ", args[0],
-		strconv.FormatInt(int64(jobId), 10), commit)
+	prefix := fmt.Sprintf("repo=%s jobId=%d ref=%s ", repo, jobId, commit)
 
 	stdOutLogger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
 	stdErrLogger := log.New(os.Stderr, "", log.Ldate|log.Ltime)
 
 	logStreamerOut := NewLogstreamer(stdOutLogger, prefix, false)
-	logStreameErr := NewLogstreamer(stdErrLogger, prefix, false)
+	logStreamerErr := NewLogstreamer(stdErrLogger, prefix, false)
+
+	if !*parallel {
+		runningJobMap.mu.Lock()
+		otherJob, ok := runningJobMap.m[repo]
+		if ok {
+			runningJobMap.mu.Unlock()
+			logStreamerOut.Write([]byte(fmt.Sprintf("Waiting for jobID %d to finish", otherJob.jobID)))
+			<-otherJob.doneCh
+			runningJobMap.mu.Lock()
+		}
+		rj := &runningJob{
+			jobID:  jobId,
+			doneCh: make(chan struct{}),
+		}
+		runningJobMap.m[repo] = rj
+		runningJobMap.mu.Unlock()
+
+		defer func() {
+			runningJobMap.mu.Lock()
+			close(rj.doneCh)
+			delete(runningJobMap.m, repo)
+			runningJobMap.mu.Unlock()
+		}()
+	}
 
 	env := append(os.Environ(), fmt.Sprintf("GOHUB_JOB_ID=%d", jobId))
 
@@ -139,7 +175,7 @@ func executeShell(shell string, args ...string) {
 	cmd.Env = env
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = logStreamerOut
-	cmd.Stderr = logStreameErr
+	cmd.Stderr = logStreamerErr
 
 	err := cmd.Start()
 	if err != nil {
@@ -170,6 +206,7 @@ var (
 	port       = flag.String("port", "7654", "port to listen on")
 	configFile = flag.String("config", "./config.json", "config")
 	logFile    = flag.String("log", "", "log file")
+	parallel   = flag.Bool("parallel", false, "run jobs for the same repo in parallel")
 )
 
 func init() {
