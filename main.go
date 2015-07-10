@@ -11,8 +11,8 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -37,6 +37,13 @@ type Hook struct {
 	Repo   string
 	Branch string
 	Shell  string
+}
+
+var runningJobMap = struct {
+	m  map[string]chan uint32
+	mu sync.Mutex
+}{
+	m: make(map[string]chan uint32),
 }
 
 var config Config
@@ -117,26 +124,50 @@ func executeShell(shell string, args ...string) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	jobId := r.Uint32()
 
+	repo := args[0]
 	commit := args[4]
 	if args[3] == "push" {
 		commit = commit[:6]
 	}
 
-	prefix := fmt.Sprintf("repo=%s jobId=%s ref=%s ", args[0],
-		strconv.FormatInt(int64(jobId), 10), commit)
+	prefix := fmt.Sprintf("repo=%s jobId=%d ref=%s ", repo, jobId, commit)
 
 	stdOutLogger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
 	stdErrLogger := log.New(os.Stderr, "", log.Ldate|log.Ltime)
 
 	logStreamerOut := NewLogstreamer(stdOutLogger, prefix, false)
-	logStreameErr := NewLogstreamer(stdErrLogger, prefix, false)
+	logStreamerErr := NewLogstreamer(stdErrLogger, prefix, false)
+
+	if !*parallel {
+		runningJobMap.mu.Lock()
+		ch, ok := runningJobMap.m[repo]
+		if !ok {
+			ch = make(chan uint32, 1)
+			runningJobMap.m[repo] = ch
+		}
+		runningJobMap.mu.Unlock()
+
+		select {
+		case ch <- jobId:
+
+		default:
+			msg := fmt.Sprintf("Waiting for other %s jobs to finish (%d enqueued)\n", repo, len(ch))
+			logStreamerOut.Write([]byte(msg))
+			logStreamerOut.Flush()
+			ch <- jobId
+		}
+
+		defer func() {
+			<-ch
+		}()
+	}
 
 	logStreamerOut.Write([]byte(fmt.Sprintf("Running %s %s\n", shell, strings.Join(args, " "))))
 	cmd := exec.Command(shell, args...)
 
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = logStreamerOut
-	cmd.Stderr = logStreameErr
+	cmd.Stderr = logStreamerErr
 
 	err := cmd.Start()
 	if err != nil {
@@ -167,6 +198,7 @@ var (
 	port       = flag.String("port", "7654", "port to listen on")
 	configFile = flag.String("config", "./config.json", "config")
 	logFile    = flag.String("log", "", "log file")
+	parallel   = flag.Bool("parallel", false, "run jobs for the same repo in parallel")
 )
 
 func init() {
