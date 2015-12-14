@@ -7,4 +7,5 @@ echo "branch is $3"
 sleep 5
 echo "type is $4"
 echo "ref is $5"
+echo "env is $6"
 exit 1

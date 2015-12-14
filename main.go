@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -30,7 +31,8 @@ type GithubJson struct {
 }
 
 type Config struct {
-	Hooks []Hook
+	SlackToken string
+	Hooks      []Hook
 }
 
 type Hook struct {
@@ -47,6 +49,8 @@ var runningJobMap = struct {
 }
 
 var config Config
+
+var slackRegexp = regexp.MustCompile(`deploy (.*) (.*) to (.*)`)
 
 func loadConfig(configFile *string) {
 	configData, err := ioutil.ReadFile(*configFile)
@@ -117,6 +121,43 @@ func addHandler() {
 			log.Printf("Unhandled webhook for %s branch %s.  Got:\n%s", data.Repository.FullName,
 				hook.Branch, string(body))
 		}
+	})
+
+	http.HandleFunc("/slack", func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			log.Println(err)
+			return
+		}
+
+		if token := r.PostFormValue("token"); token != config.SlackToken {
+			log.Printf("Slack token %q doesn't match configured token %q", token, config.SlackToken)
+			return
+		}
+
+		matches := slackRegexp.FindStringSubmatch(r.PostFormValue("text"))
+		if len(matches) == 0 {
+			fmt.Fprintf(w, `{"text": "I don't understand that.  Format: deploy <project> <git ref> to <environment>"}`)
+			return
+		}
+
+		project, ref, env := matches[1], matches[2], matches[3]
+
+		var hook Hook
+		for _, cfgHook := range config.Hooks {
+			cfgProject := cfgHook.Repo[strings.LastIndex(cfgHook.Repo, "/")+1:]
+			if cfgProject == project {
+				hook = cfgHook
+				break
+			}
+		}
+
+		if hook.Shell == "" {
+			fmt.Fprintf(w, `{"text": "Sorry, I don't know about %s"}`, project)
+			return
+		}
+
+		go executeShell(hook.Shell, hook.Repo, project, hook.Branch, "slack", ref, env)
+
 	})
 }
 
